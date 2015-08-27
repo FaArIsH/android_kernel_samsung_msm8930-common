@@ -1062,6 +1062,15 @@ static void try_to_steal_freepages(struct zone *zone, struct page *page,
 	    start_type == MIGRATE_RECLAIMABLE ||
 	    // allow unmovable allocs up to 64K without migrating blocks
 	    (start_type == MIGRATE_UNMOVABLE && start_order >= 5) ||
+	    page_group_by_mobility_disabled) {
+		int pages;
+
+		pages = move_freepages_block(zone, page, start_type);
+
+		/* Claim the whole block if over half of it is free */
+		if (pages >= (1 << (pageblock_order-1)) ||
+				page_group_by_mobility_disabled)
+			set_pageblock_migratetype(page, start_type);
 	}
 }
 
