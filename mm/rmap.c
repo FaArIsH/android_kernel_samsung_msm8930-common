@@ -809,12 +809,6 @@ int page_referenced_one(struct page *page, struct vm_area_struct *vma,
 		pte_unmap_unlock(pte, ptl);
 	}
 
-	/* Pretend the page is referenced if the task has the
-	   swap token and is in the middle of a page fault. */
-	if (mm != current->mm && has_swap_token(mm) &&
-			rwsem_is_locked(&mm->mmap_sem))
-		referenced++;
-
 	(*mapcount)--;
 
 	if (referenced)
@@ -1568,11 +1562,18 @@ bool is_vma_temporary_stack(struct vm_area_struct *vma)
  * vm_flags for that VMA.  That should be OK, because that vma shouldn't be
  * 'LOCKED.
  */
-static int try_to_unmap_anon(struct page *page, enum ttu_flags flags)
+static int try_to_unmap_anon(struct page *page, enum ttu_flags flags,
+					struct vm_area_struct *target_vma)
 {
+	int ret = SWAP_AGAIN;
+	unsigned long address;
 	struct anon_vma *anon_vma;
 	struct anon_vma_chain *avc;
-	int ret = SWAP_AGAIN;
+
+	if (target_vma) {
+		address = vma_address(page, target_vma);
+		return try_to_unmap_one(page, target_vma, address, flags);
+	}
 
 	anon_vma = page_lock_anon_vma(page);
 	if (!anon_vma)
@@ -1580,7 +1581,6 @@ static int try_to_unmap_anon(struct page *page, enum ttu_flags flags)
 
 	list_for_each_entry(avc, &anon_vma->head, same_anon_vma) {
 		struct vm_area_struct *vma = avc->vma;
-		unsigned long address;
 
 		/*
 		 * During exec, a temporary VMA is setup and later moved.
@@ -1621,7 +1621,8 @@ static int try_to_unmap_anon(struct page *page, enum ttu_flags flags)
  * vm_flags for that VMA.  That should be OK, because that vma shouldn't be
  * 'LOCKED.
  */
-static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
+static int try_to_unmap_file(struct page *page, enum ttu_flags flags,
+				struct vm_area_struct *target_vma)
 {
 	struct address_space *mapping = page->mapping;
 	pgoff_t pgoff = page->index << (PAGE_CACHE_SHIFT - PAGE_SHIFT);
@@ -1632,15 +1633,25 @@ static int try_to_unmap_file(struct page *page, enum ttu_flags flags)
 	unsigned long max_nl_cursor = 0;
 	unsigned long max_nl_size = 0;
 	unsigned int mapcount;
+	unsigned long address;
 
 	mutex_lock(&mapping->i_mmap_mutex);
-	vma_prio_tree_foreach(vma, &iter, &mapping->i_mmap, pgoff, pgoff) {
-		unsigned long address = vma_address(page, vma);
-		if (address == -EFAULT)
-			continue;
-		ret = try_to_unmap_one(page, vma, address, flags);
-		if (ret != SWAP_AGAIN || !page_mapped(page))
+	if (target_vma) {
+		/* We don't handle non-linear vma on ramfs */
+		if (unlikely(!list_empty(&mapping->i_mmap_nonlinear)))
 			goto out;
+		address = vma_address(page, target_vma);
+		ret = try_to_unmap_one(page, target_vma, address, flags);
+		goto out;
+	} else {
+		vma_prio_tree_foreach(vma, &iter, &mapping->i_mmap, pgoff, pgoff) {
+			address = vma_address(page, vma);
+			if (address == -EFAULT)
+				continue;
+			ret = try_to_unmap_one(page, vma, address, flags);
+			if (ret != SWAP_AGAIN || !page_mapped(page))
+				goto out;
+		}
 	}
 
 	if (list_empty(&mapping->i_mmap_nonlinear))
@@ -1731,7 +1742,8 @@ out:
  * SWAP_FAIL	- the page is unswappable
  * SWAP_MLOCK	- page is mlocked.
  */
-int try_to_unmap(struct page *page, enum ttu_flags flags)
+int try_to_unmap(struct page *page, enum ttu_flags flags,
+				struct vm_area_struct *vma)
 {
 	int ret;
 
@@ -1739,11 +1751,11 @@ int try_to_unmap(struct page *page, enum ttu_flags flags)
 	VM_BUG_ON(!PageHuge(page) && PageTransHuge(page));
 
 	if (unlikely(PageKsm(page)))
-		ret = try_to_unmap_ksm(page, flags);
+		ret = try_to_unmap_ksm(page, flags, vma);
 	else if (PageAnon(page))
-		ret = try_to_unmap_anon(page, flags);
+		ret = try_to_unmap_anon(page, flags, vma);
 	else
-		ret = try_to_unmap_file(page, flags);
+		ret = try_to_unmap_file(page, flags, vma);
 	if (ret != SWAP_MLOCK && !page_mapped(page))
 		ret = SWAP_SUCCESS;
 	return ret;
@@ -1769,11 +1781,11 @@ int try_to_munlock(struct page *page)
 	VM_BUG_ON(!PageLocked(page) || PageLRU(page));
 
 	if (unlikely(PageKsm(page)))
-		return try_to_unmap_ksm(page, TTU_MUNLOCK);
+		return try_to_unmap_ksm(page, TTU_MUNLOCK, NULL);
 	else if (PageAnon(page))
-		return try_to_unmap_anon(page, TTU_MUNLOCK);
+		return try_to_unmap_anon(page, TTU_MUNLOCK, NULL);
 	else
-		return try_to_unmap_file(page, TTU_MUNLOCK);
+		return try_to_unmap_file(page, TTU_MUNLOCK, NULL);
 }
 
 void __put_anon_vma(struct anon_vma *anon_vma)
