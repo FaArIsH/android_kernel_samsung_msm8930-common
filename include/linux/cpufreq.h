@@ -20,6 +20,9 @@
 #include <linux/workqueue.h>
 #include <linux/cpumask.h>
 #include <asm/div64.h>
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+#include <linux/cpufreq_hardlimit.h>
+#endif
 
 #define CPUFREQ_NAME_LEN 16
 
@@ -214,6 +217,7 @@ void unlock_policy_rwsem_write(int cpu);
 
 #define CPUFREQ_RELATION_L 0  /* lowest frequency at or above target */
 #define CPUFREQ_RELATION_H 1  /* highest frequency below or at target */
+#define CPUFREQ_RELATION_C 2  /* closest frequency to target */
 
 struct freq_attr;
 
@@ -266,6 +270,9 @@ void cpufreq_notify_utilization(struct cpufreq_policy *policy,
 
 static inline void cpufreq_verify_within_limits(struct cpufreq_policy *policy, unsigned int min, unsigned int max)
 {
+#ifdef CONFIG_CPUFREQ_HARDLIMIT
+	max = check_cpufreq_hardlimit(max); /* Yank555.lu - Enforce hardlimit */
+#endif
 	if (policy->min < min)
 		policy->min = min;
 	if (policy->max < min)
@@ -370,12 +377,54 @@ extern struct cpufreq_governor cpufreq_gov_userspace;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND)
 extern struct cpufreq_governor cpufreq_gov_ondemand;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_ondemand)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMANDPLUS)
+extern struct cpufreq_governor cpufreq_gov_ondemandplus;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_ondemandplus)
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_CONSERVATIVE)
 extern struct cpufreq_governor cpufreq_gov_conservative;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_conservative)
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE)
 extern struct cpufreq_governor cpufreq_gov_interactive;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_interactive)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_LIONHEART)
+extern struct cpufreq_governor cpufreq_gov_lionheart;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_lionheart)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_WHEATLEY)
+extern struct cpufreq_governor cpufreq_gov_wheatley;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_wheatley)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_SMARTMAX)
+extern struct cpufreq_governor cpufreq_gov_smartmax;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_smartmax)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE)
+extern struct cpufreq_governor cpufreq_gov_intelliactive;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_intelliactive)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIMM)
+extern struct cpufreq_governor cpufreq_gov_intellimm;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_intellimm)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIDEMAND)
+extern struct cpufreq_governor cpufreq_gov_intellidemand;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_intellidemand)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_IMPULSE)
+extern struct cpufreq_governor cpufreq_gov_impulse;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_impulse)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_SMARTMAX_EPS)
+extern struct cpufreq_governor cpufreq_gov_smartmax_eüs;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_smartmax_eps)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_ALUCARD)
+extern struct cpufreq_governor cpufreq_gov_alucard;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_alucard)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIDEMAND)
+extern struct cpufreq_governor cpufreq_gov_intellidemand;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_intellidemand)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_NIGHTMARE)
+extern struct cpufreq_governor cpufreq_gov_nightmare;
+#define CPUFREQ_DEFAULT_GOVERNOR (&cpufreq_gov_nightmare)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_DARKNESS)
+extern struct cpufreq_governor cpufreq_gov_darkness;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_darkness)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_YANKACTIVE)
+extern struct cpufreq_governor cpufreq_gov_yankactive;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_yankactive)
 #endif
 
 

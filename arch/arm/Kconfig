@@ -20,9 +20,11 @@ config ARM
         select HAVE_EFFICIENT_UNALIGNED_ACCESS if (CPU_V6 || CPU_V6K || CPU_V7) && MMU
 	select HAVE_FUNCTION_GRAPH_TRACER if (!THUMB2_KERNEL)
 	select ARCH_BINFMT_ELF_RANDOMIZE_PIE
+	select HAVE_EFFICIENT_UNALIGNED_ACCESS
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_LZO
+	select HAVE_KERNEL_LZ4
 	select HAVE_KERNEL_LZMA
 	select HAVE_KERNEL_XZ
 	select HAVE_IRQ_WORK
@@ -1515,6 +1517,7 @@ config KSAPI
 endmenu
 
 source "arch/arm/common/Kconfig"
+source "arch/arm/hotplug/Kconfig"
 
 menu "Bus support"
 
@@ -1916,7 +1919,6 @@ config DONT_MAP_HOLE_AFTER_MEMBANK0
 
 config HOLES_IN_ZONE
 	def_bool n
-	depends on SPARSEMEM
 
 config FORCE_MAX_ZONEORDER
 	int "Maximum zone order" if ARCH_SHMOBILE

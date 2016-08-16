@@ -820,6 +820,18 @@ static inline void *page_rmapping(struct page *page)
 	return (void *)((unsigned long)page->mapping & ~PAGE_MAPPING_FLAGS);
 }
 
+extern struct address_space *__page_file_mapping(struct page *);
+
+static inline
+struct address_space *page_file_mapping(struct page *page)
+{
+	if (unlikely(PageSwapCache(page)))
+		return __page_file_mapping(page);
+
+	return page->mapping;
+}
+
+
 static inline int PageAnon(struct page *page)
 {
 	return ((unsigned long)page->mapping & PAGE_MAPPING_ANON) != 0;
@@ -833,6 +845,20 @@ static inline pgoff_t page_index(struct page *page)
 {
 	if (unlikely(PageSwapCache(page)))
 		return page_private(page);
+	return page->index;
+}
+
+extern pgoff_t __page_file_index(struct page *page);
+
+/*
+ * Return the file index of the page. Regular pagecache pages use ->index
+ * whereas swapcache pages use swp_offset(->private)
+ */
+static inline pgoff_t page_file_index(struct page *page)
+{
+	if (unlikely(PageSwapCache(page)))
+		return __page_file_index(page);
+
 	return page->index;
 }
 
@@ -1682,6 +1708,20 @@ static inline bool page_is_guard(struct page *page)
 static inline unsigned int debug_guardpage_minorder(void) { return 0; }
 static inline bool page_is_guard(struct page *page) { return false; }
 #endif /* CONFIG_DEBUG_PAGEALLOC */
+
+#ifdef CONFIG_PROCESS_RECLAIM
+struct reclaim_param {
+	struct vm_area_struct *vma;
+	/* Number of pages scanned */
+	int nr_scanned;
+	/* max pages to reclaim */
+	int nr_to_reclaim;
+	/* pages reclaimed */
+	int nr_reclaimed;
+};
+extern struct reclaim_param reclaim_task_anon(struct task_struct *task,
+		int nr_to_reclaim);
+#endif
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */

@@ -1778,6 +1778,18 @@ config MSM_CPU_FREQ_MIN
 
 endif # CPU_FREQ_MSM
 
+config CPU_OVERCLOCK
+	bool "Enable CPU Overclocking option"
+	default n
+	help
+	  Krait overclocking up to 2.0 GHz
+
+config CPU_UNDERCLOCK
+	bool "Enable extra low CPU clocks"
+	default n
+	help
+	  Extra low cpu frequencies enabled for CPU
+
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
 	default n
@@ -2726,6 +2738,14 @@ config MSM_DCVS
 	  algorithm and the algorithm returns a frequency for the core which is
 	  passed to the frequency change driver.
 
+config MSM_HOTPLUG
+	bool "MSM hotplug driver"
+	depends on HOTPLUG_CPU
+	default y
+	help
+	  The MSM hotplug driver controls on-/offlining of additional cores based
+	  on current cpu load.
+
 config MSM_CPR
 	tristate "Use MSM CPR in S/W mode"
 	help
@@ -2788,6 +2808,13 @@ config MSM_USE_USER_ACCESSIBLE_TIMERS
 	help
 	  Enables MSM-specific user accessible timers via a shared
 	  memory page containing the cycle counter.
+
+config FORCE_FAST_CHARGE
+	bool "Force AC charge mode at will"
+	default y
+	help
+	  A simple sysfs interface to force adapters that
+	  are detected as USB to charge as AC.
 
 config SEC_THERMISTOR
 	bool "Use external thermistor near AP for checking temprature"
@@ -2903,5 +2930,11 @@ config HAS_MACH_MEMUTILS
 	bool "Motorola MSM memcpy enhancements"
 	---help---
 	 Faster memcpy performance for Krait
+
+config ALUCARD_HOTPLUG
+	bool "Enable alucard-hotplug cpu hotplug driver"
+	default y
+	help
+	  Generic Alucard-hotplug cpu hotplug driver for ARM SOCs
 
 endif

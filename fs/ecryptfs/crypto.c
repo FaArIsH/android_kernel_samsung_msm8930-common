@@ -243,7 +243,7 @@ void ecryptfs_destroy_crypt_stat(struct ecryptfs_crypt_stat *crypt_stat)
 	struct ecryptfs_key_sig *key_sig, *key_sig_tmp;
 
 	if (crypt_stat->tfm)
-		crypto_free_ablkcipher(crypt_stat->tfm);
+		crypto_free_blkcipher(crypt_stat->tfm);
 	if (crypt_stat->hash_tfm)
 		crypto_free_hash(crypt_stat->hash_tfm);
 	list_for_each_entry_safe(key_sig, key_sig_tmp,
@@ -322,22 +322,6 @@ int virt_to_scatterlist(const void *addr, int size, struct scatterlist *sg,
 	return i;
 }
 
-struct extent_crypt_result {
-	struct completion completion;
-	int rc;
-};
-
-static void extent_crypt_complete(struct crypto_async_request *req, int rc)
-{
-	struct extent_crypt_result *ecr = req->data;
-
-	if (rc == -EINPROGRESS)
-		return;
-
-	ecr->rc = rc;
-	complete(&ecr->completion);
-}
-
 /**
  * encrypt_scatterlist
  * @crypt_stat: Pointer to the crypt_stat struct to initialize.
@@ -353,8 +337,11 @@ static int encrypt_scatterlist(struct ecryptfs_crypt_stat *crypt_stat,
 			       struct scatterlist *src_sg, int size,
 			       unsigned char *iv)
 {
-	struct ablkcipher_request *req = NULL;
-	struct extent_crypt_result ecr;
+	struct blkcipher_desc desc = {
+		.tfm = crypt_stat->tfm,
+		.info = iv,
+		.flags = CRYPTO_TFM_REQ_MAY_SLEEP
+	};
 	int rc = 0;
 
 	BUG_ON(!crypt_stat || !crypt_stat->tfm
@@ -365,47 +352,24 @@ static int encrypt_scatterlist(struct ecryptfs_crypt_stat *crypt_stat,
 		ecryptfs_dump_hex(crypt_stat->key,
 				  crypt_stat->key_size);
 	}
-
-	init_completion(&ecr.completion);
-
-	mutex_lock(&crypt_stat->cs_tfm_mutex);
-	req = ablkcipher_request_alloc(crypt_stat->tfm, GFP_NOFS);
-	if (!req) {
-		mutex_unlock(&crypt_stat->cs_tfm_mutex);
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	ablkcipher_request_set_callback(req,
-			CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
-			extent_crypt_complete, &ecr);
 	/* Consider doing this once, when the file is opened */
+	mutex_lock(&crypt_stat->cs_tfm_mutex);
 	if (!(crypt_stat->flags & ECRYPTFS_KEY_SET)) {
-		rc = crypto_ablkcipher_setkey(crypt_stat->tfm, crypt_stat->key,
-					      crypt_stat->key_size);
-		if (rc) {
-			ecryptfs_printk(KERN_ERR,
-					"Error setting key; rc = [%d]\n",
-					rc);
-			mutex_unlock(&crypt_stat->cs_tfm_mutex);
-			rc = -EINVAL;
-			goto out;
-		}
+		rc = crypto_blkcipher_setkey(crypt_stat->tfm, crypt_stat->key,
+					     crypt_stat->key_size);
 		crypt_stat->flags |= ECRYPTFS_KEY_SET;
 	}
-	mutex_unlock(&crypt_stat->cs_tfm_mutex);
-	ecryptfs_printk(KERN_DEBUG, "Encrypting [%d] bytes.\n", size);
-	ablkcipher_request_set_crypt(req, src_sg, dest_sg, size, iv);
-	rc = crypto_ablkcipher_encrypt(req);
-	if (rc == -EINPROGRESS || rc == -EBUSY) {
-		struct extent_crypt_result *ecr = req->base.data;
-
-		wait_for_completion(&ecr->completion);
-		rc = ecr->rc;
-		INIT_COMPLETION(ecr->completion);
+	if (rc) {
+		ecryptfs_printk(KERN_ERR, "Error setting key; rc = [%d]\n",
+				rc);
+		mutex_unlock(&crypt_stat->cs_tfm_mutex);
+		rc = -EINVAL;
+		goto out;
 	}
+	ecryptfs_printk(KERN_DEBUG, "Encrypting [%d] bytes.\n", size);
+	crypto_blkcipher_encrypt_iv(&desc, dest_sg, src_sg, size);
+	mutex_unlock(&crypt_stat->cs_tfm_mutex);
 out:
-	ablkcipher_request_free(req);
 	return rc;
 }
 
@@ -663,61 +627,35 @@ static int decrypt_scatterlist(struct ecryptfs_crypt_stat *crypt_stat,
 			       struct scatterlist *src_sg, int size,
 			       unsigned char *iv)
 {
-	struct ablkcipher_request *req = NULL;
-	struct extent_crypt_result ecr;
+	struct blkcipher_desc desc = {
+		.tfm = crypt_stat->tfm,
+		.info = iv,
+		.flags = CRYPTO_TFM_REQ_MAY_SLEEP
+	};
 	int rc = 0;
 
-	BUG_ON(!crypt_stat || !crypt_stat->tfm
-	       || !(crypt_stat->flags & ECRYPTFS_STRUCT_INITIALIZED));
-	if (unlikely(ecryptfs_verbosity > 0)) {
-		ecryptfs_printk(KERN_DEBUG, "Key size [%zd]; key:\n",
-				crypt_stat->key_size);
-		ecryptfs_dump_hex(crypt_stat->key,
-				  crypt_stat->key_size);
-	}
-
-	init_completion(&ecr.completion);
-
+	/* Consider doing this once, when the file is opened */
 	mutex_lock(&crypt_stat->cs_tfm_mutex);
-	req = ablkcipher_request_alloc(crypt_stat->tfm, GFP_NOFS);
-	if (!req) {
+	rc = crypto_blkcipher_setkey(crypt_stat->tfm, crypt_stat->key,
+				     crypt_stat->key_size);
+	if (rc) {
+		ecryptfs_printk(KERN_ERR, "Error setting key; rc = [%d]\n",
+				rc);
 		mutex_unlock(&crypt_stat->cs_tfm_mutex);
-		rc = -ENOMEM;
+		rc = -EINVAL;
 		goto out;
 	}
-
-	ablkcipher_request_set_callback(req,
-			CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
-			extent_crypt_complete, &ecr);
-	/* Consider doing this once, when the file is opened */
-	if (!(crypt_stat->flags & ECRYPTFS_KEY_SET)) {
-		rc = crypto_ablkcipher_setkey(crypt_stat->tfm, crypt_stat->key,
-					      crypt_stat->key_size);
-		if (rc) {
-			ecryptfs_printk(KERN_ERR,
-					"Error setting key; rc = [%d]\n",
-					rc);
-			mutex_unlock(&crypt_stat->cs_tfm_mutex);
-			rc = -EINVAL;
-			goto out;
-		}
-		crypt_stat->flags |= ECRYPTFS_KEY_SET;
-	}
-	mutex_unlock(&crypt_stat->cs_tfm_mutex);
 	ecryptfs_printk(KERN_DEBUG, "Decrypting [%d] bytes.\n", size);
-	ablkcipher_request_set_crypt(req, src_sg, dest_sg, size, iv);
-	rc = crypto_ablkcipher_decrypt(req);
-	if (rc == -EINPROGRESS || rc == -EBUSY) {
-		struct extent_crypt_result *ecr = req->base.data;
-
-		wait_for_completion(&ecr->completion);
-		rc = ecr->rc;
-		INIT_COMPLETION(ecr->completion);
+	rc = crypto_blkcipher_decrypt_iv(&desc, dest_sg, src_sg, size);
+	mutex_unlock(&crypt_stat->cs_tfm_mutex);
+	if (rc) {
+		ecryptfs_printk(KERN_ERR, "Error decrypting; rc = [%d]\n",
+				rc);
+		goto out;
 	}
+	rc = size;
 out:
-	ablkcipher_request_free(req);
 	return rc;
-
 }
 
 /**
@@ -811,7 +749,8 @@ int ecryptfs_init_crypt_ctx(struct ecryptfs_crypt_stat *crypt_stat)
 						    crypt_stat->cipher, "cbc");
 	if (rc)
 		goto out_unlock;
-	crypt_stat->tfm = crypto_alloc_ablkcipher(full_alg_name, 0, 0);
+	crypt_stat->tfm = crypto_alloc_blkcipher(full_alg_name, 0,
+						 CRYPTO_ALG_ASYNC);
 	kfree(full_alg_name);
 	if (IS_ERR(crypt_stat->tfm)) {
 		rc = PTR_ERR(crypt_stat->tfm);
@@ -821,7 +760,7 @@ int ecryptfs_init_crypt_ctx(struct ecryptfs_crypt_stat *crypt_stat)
 				crypt_stat->cipher);
 		goto out_unlock;
 	}
-	crypto_ablkcipher_set_flags(crypt_stat->tfm, CRYPTO_TFM_REQ_WEAK_KEY);
+	crypto_blkcipher_set_flags(crypt_stat->tfm, CRYPTO_TFM_REQ_WEAK_KEY);
 	rc = 0;
 out_unlock:
 	mutex_unlock(&crypt_stat->cs_tfm_mutex);
